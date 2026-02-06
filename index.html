@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0f172a">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>PHQ Matrix v15.3 (Secure)</title>
+    <title>PHQ Matrix v15.3 (GitHub)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&amp;display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&display=swap" rel="stylesheet">
@@ -662,6 +662,13 @@
     let CURRENT_COMP_BREAKDOWN = [];
     let FICHERO_MAP = new Map();
     let SHOW_SUMMARIES = false;
+
+    // --- GITHUB DATA SOURCES ---
+const GITHUB_DATA = {
+    audit: 'https://raw.githubusercontent.com/hjsanoja/AppSegmentacion/main/data/datacloseup.csv',
+    fichero: 'https://raw.githubusercontent.com/hjsanoja/AppSegmentacion/main/data/fichero_medico.csv'
+};
+
     
     // Config States - Adoption (Share)
     let TH_LOY_LOW = 33;
@@ -874,11 +881,58 @@
 
     function normalizeKey(key) { if(!key) return ""; let s = String(key).trim(); return s.replace(/^0+/, ''); }
 
+    // --- LOAD CSV FROM GITHUB ---
+async function loadCSVFromGitHub(url) {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Error cargando " + url);
+    const text = await response.text();
+    return XLSX.read(text, { type: "string" });
+}
+
+
     // --- INITIALIZATION ---
-    window.addEventListener('DOMContentLoaded', () => { 
-        generateMatrixGridHTML(); 
-        initStorage(); // Start persistence check
-    });
+    window.addEventListener('DOMContentLoaded', async () => {
+    generateMatrixGridHTML();
+    await initStorage();
+
+    if (!RAW_DATA || RAW_DATA.length === 0) {
+        loadDataFromGitHub();
+    }
+});
+
+
+// --- AUTO LOAD DATA FROM GITHUB ---
+async function loadDataFromGitHub() {
+    try {
+        showToast("Cargando datos desde GitHub...");
+
+        // CloseUp / Auditoría
+        const auditWB = await loadCSVFromGitHub(GITHUB_DATA.audit);
+        const auditSheet = auditWB.Sheets[auditWB.SheetNames[0]];
+        RAW_DATA = XLSX.utils.sheet_to_json(auditSheet, { defval: "" });
+
+        // Fichero Médico
+        const ficheroWB = await loadCSVFromGitHub(GITHUB_DATA.fichero);
+        const ficheroSheet = ficheroWB.Sheets[ficheroWB.SheetNames[0]];
+        const ficheroRows = XLSX.utils.sheet_to_json(ficheroSheet, { defval: "" });
+
+        FICHERO_MAP.clear();
+        ficheroRows.forEach(row => {
+            if (row.Matricula) {
+                FICHERO_MAP.set(String(row.Matricula).trim(), row);
+            }
+        });
+
+        await processData(true);
+        await saveSession();
+
+        showToast("Datos cargados correctamente");
+    } catch (err) {
+        console.error(err);
+        showToast("Error cargando datos desde GitHub");
+    }
+}
+
 
     function loadConfig() { const input = document.getElementById('phqConfigInput').value; PHQ_PRODUCTS = input.split(/[\n,]+/).map(s => s.trim().toUpperCase()).filter(s => s); }
     function saveConfig() { loadConfig(); document.getElementById('configModal').classList.add('hidden'); saveSession(); if(RAW_DATA.length > 0) processData(true); }
